@@ -1,4 +1,5 @@
 const db = require('../database/db');
+const stripe = require('stripe')(process.env.STRIPE_API_KEY);
 
 const getEntriesByProcessId = async (req, res) => {
     const { processId } = req.params;
@@ -14,11 +15,9 @@ const getEntriesByProcessId = async (req, res) => {
 const createEntry = async (req, res) => {
     const { processId } = req.params;
     const { description, value, type, status, due_date } = req.body;
-
     if (!description || !value || !type || !status) {
         return res.status(400).json({ message: 'Todos os campos são obrigatórios.' });
     }
-
     try {
         const queryText = 'INSERT INTO financial_entries(description, value, type, status, due_date, process_id, user_id) VALUES($1, $2, $3, $4, $5, $6, $7) RETURNING *';
         const { rows } = await db.query(queryText, [description, value, type, status, due_date, processId, req.user.id]);
@@ -44,8 +43,53 @@ const getFinancialSummary = async (req, res) => {
     }
 };
 
+const createClientInvoice = async (req, res) => {
+    const { entryId } = req.params;
+    const { clientEmail } = req.body;
+    if (!clientEmail) {
+        return res.status(400).json({ message: 'Email do cliente é obrigatório.' });
+    }
+    try {
+        const { rows } = await db.query('SELECT * FROM financial_entries WHERE id = $1 AND user_id = $2', [entryId, req.user.id]);
+        if (rows.length === 0) {
+            return res.status(404).json({ message: 'Lançamento financeiro não encontrado.' });
+        }
+        const entry = rows[0];
+
+        const product = await stripe.products.create({
+            name: `Serviços Jurídicos: ${entry.description}`,
+        });
+
+        const price = await stripe.prices.create({
+            product: product.id,
+            unit_amount: Math.round(parseFloat(entry.value) * 100),
+            currency: 'brl',
+        });
+
+        const invoice = await stripe.invoices.create({
+            customer_email: clientEmail,
+            collection_method: 'send_invoice',
+            days_until_due: 30,
+            auto_advance: true,
+        });
+
+        await stripe.invoiceItems.create({
+            invoice: invoice.id,
+            price: price.id,
+        });
+
+        const finalInvoice = await stripe.invoices.finalizeInvoice(invoice.id);
+        await stripe.invoices.sendInvoice(finalInvoice.id);
+
+        res.status(200).json({ message: 'Fatura enviada para o email do cliente com sucesso!', invoiceUrl: finalInvoice.hosted_invoice_url });
+    } catch (error) {
+        res.status(500).json({ message: 'Erro ao gerar fatura no Stripe.', error_details: error.toString() });
+    }
+};
+
 module.exports = {
     getEntriesByProcessId,
     createEntry,
-    getFinancialSummary
+    getFinancialSummary,
+    createClientInvoice
 };
