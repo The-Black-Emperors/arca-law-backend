@@ -101,25 +101,27 @@ const checkProcessUpdates = async (req, res) => {
         if (updates.length === 0) {
             return res.status(200).json({ message: 'Nenhuma movimentação encontrada para extrair da página.', count: 0 });
         }
-        let newUpdatesCount = 0;
+        
+        const newUpdates = [];
         for (const update of updates) {
             const formattedDate = update.date.split('/').reverse().join('-');
-            const queryText = 'INSERT INTO process_updates(process_id, update_date, description) VALUES($1, $2, $3) ON CONFLICT (process_id, update_date, description) DO NOTHING';
+            const queryText = 'INSERT INTO process_updates(process_id, update_date, description) VALUES($1, $2, $3) ON CONFLICT (process_id, update_date, description) DO NOTHING RETURNING *';
             const result = await db.query(queryText, [id, formattedDate, update.description]);
-            if(result.rowCount > 0) {
-                newUpdatesCount++;
+            if (result.rowCount > 0) {
+                newUpdates.push(result.rows[0]);
             }
         }
+        
         await db.query('UPDATE processos SET last_check_at = NOW() WHERE id = $1', [id]);
 
-        if (newUpdatesCount > 0) {
+        if (newUpdates.length > 0) {
             const { rows: userRows } = await db.query('SELECT email, name FROM users WHERE id = $1', [req.user.id]);
             if (userRows.length > 0) {
-                await emailService.sendNewUpdateNotification(userRows[0].email, userRows[0].name, processNumber);
+                await emailService.sendNewUpdateNotification(userRows[0].email, userRows[0].name, processNumber, updates);
             }
         }
 
-        res.status(200).json({ message: `${newUpdatesCount} nova(s) movimentação(ões) salva(s).`, count: newUpdatesCount });
+        res.status(200).json({ message: `${newUpdates.length} nova(s) movimentação(ões) salva(s).`, count: newUpdates.length });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao verificar movimentações.', error_details: error.toString() });
     }
