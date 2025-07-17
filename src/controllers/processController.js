@@ -1,5 +1,6 @@
 const db = require('../database/db');
 const scraperService = require('../services/scraperService');
+const emailService = require('../services/emailService');
 
 const getAllProcesses = async (req, res) => {
     const limit = req.query.limit;
@@ -90,6 +91,12 @@ const checkProcessUpdates = async (req, res) => {
         return res.status(400).json({ message: "URL do processo é obrigatória." });
     }
     try {
+        const { rows: processRows } = await db.query('SELECT numero FROM processos WHERE id = $1 AND user_id = $2', [id, req.user.id]);
+        if (processRows.length === 0) {
+            return res.status(404).json({ message: 'Processo não encontrado.' });
+        }
+        const processNumber = processRows[0].numero;
+
         const updates = await scraperService.scrapeProcessUpdates(processUrl);
         if (updates.length === 0) {
             return res.status(200).json({ message: 'Nenhuma movimentação encontrada para extrair da página.', count: 0 });
@@ -104,6 +111,14 @@ const checkProcessUpdates = async (req, res) => {
             }
         }
         await db.query('UPDATE processos SET last_check_at = NOW() WHERE id = $1', [id]);
+
+        if (newUpdatesCount > 0) {
+            const { rows: userRows } = await db.query('SELECT email, name FROM users WHERE id = $1', [req.user.id]);
+            if (userRows.length > 0) {
+                await emailService.sendNewUpdateNotification(userRows[0].email, userRows[0].name, processNumber);
+            }
+        }
+
         res.status(200).json({ message: `${newUpdatesCount} nova(s) movimentação(ões) salva(s).`, count: newUpdatesCount });
     } catch (error) {
         res.status(500).json({ message: 'Erro ao verificar movimentações.', error_details: error.toString() });
