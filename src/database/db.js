@@ -1,7 +1,8 @@
 const { Pool } = require('pg');
+const config = require('../config');
 
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+  connectionString: config.databaseUrl,
   ssl: {
     rejectUnauthorized: false
   }
@@ -9,5 +10,4 @@ const pool = new Pool({
 
 module.exports = {
   query: (text, params) => pool.query(text, params),
-  pool: pool
 };

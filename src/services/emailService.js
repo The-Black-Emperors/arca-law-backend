@@ -1,11 +1,12 @@
 const { Resend } = require('resend');
+const config = require('../config');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(config.resendApiKey);
 
 const fromEmail = 'Arca Law <onboarding@resend.dev>';
 
 async function sendNewUpdateNotification(userEmail, userName, processNumber, updates) {
-    if (!process.env.RESEND_API_KEY) {
+    if (!config.resendApiKey) {
         console.log("Chave da Resend não configurada. Pulando envio de email.");
         return;
     }
@@ -17,14 +18,7 @@ async function sendNewUpdateNotification(userEmail, userName, processNumber, upd
             from: fromEmail,
             to: [userEmail],
             subject: `Nova(s) Movimentação(ões) no Processo ${processNumber}`,
-            html: `
-                <h1>Olá, ${userName}!</h1>
-                <p>Seu processo <strong>${processNumber}</strong> teve ${updates.length} nova(s) movimentação(ões) detectada(s):</p>
-                <ul>${updatesHtml}</ul>
-                <p>Acesse o painel do Arca Law para ver todos os detalhes.</p>
-                <br>
-                <p>Atenciosamente,<br>Equipe Arca Law</p>
-            `,
+            html: `<h1>Olá, ${userName}!</h1><p>Seu processo <strong>${processNumber}</strong> teve ${updates.length} nova(s) movimentação(ões) detectada(s):</p><ul>${updatesHtml}</ul><p>Acesse o painel do Arca Law para ver todos os detalhes.</p><br><p>Atenciosamente,<br>Equipe Arca Law</p>`,
         });
     } catch (error) {
         console.error("Erro ao enviar email de notificação:", error);
